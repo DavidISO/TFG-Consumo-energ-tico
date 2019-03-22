@@ -1,0 +1,155 @@
+\section*{Descripción de el entrono}
+
+Todo el proyecto va orientado a la empresa Coabre, con origen en Silla (Valencia).
+ Se trata de una empresa a la que el ssitema de automatización ha sido realizado por la empresa donde realizo mi FORTE.
+ Por lo que es muy conveniente que sea esta empresa la que realice la nueva funcionalidad. 
+
+Topología de la empresa.
+
+La empresa se inspira en un modelo cliente - servidor.
+
+●	Dentro de el servidor se encuentran dos subsistemas de gran calado e la empresa SUITER y REPORTER.
+●	De la parte del cliente tenemos browser, cliente de fábrica y HMI (Human Machine  interface). Dentro de HMI está:
+	○	Piquera
+	○	Truck
+	○	Premezcla
+	○	Dos. Manual
+	○	Trasvases 
+
+\section*{Sistema de automatización SUITER}
+
+La empresa dispone de un servicio de automatización de procesos llamado SUITER, este 
+sistema. Este sistema se encarga de automatizar el proceso industrial, como podría ser
+ gestión de molinos, gestión de la entrada de materias en los silos. Todo esto requiere 
+como es de prever una gestión en tiempo real.
+
+Queda destacar que se tratan de bases de datos MySQL.
+
+Al suiter le da soporte una base de datos nombrada con el nombre de la fábrica(Coabre).
+ Esta base de datos contiene registros dónde SUITER accede de forma concurrente.
+
+
+\section*{Sistema de reporte REPORTER}
+
+El REPORTER es el sistema encargado de presentar una página web, desde dónde
+ poder gestionar el proceso productivo, este sistema dispone de dos bases de datos,
+ Coabre reporter, que da soporte al servicio web, además de una base de datos replicada
+ de la de Coabre a la que accede para realizar consultas pero esta vez no de tiempo real, 
+ya que una página web no es un sistema de riesgo, además de escribir los datos de
+ entrada cómo puede ser la entrada de materias primas, las mezclas... El motivo de
+ una base replicada viene por el segundo objetivo del REPORTER que es obtener informes. 
+Estos informes suelen tener una grán carga de datos, por lo que ralentizará al SUITER
+ en el que una desviación en segundos puede suponer grandes desviaciones en el proceso.
+ imaginémonos que queremos vaciar un silo si tardamos un segundo más en cerrar la compuerta
+ la fórmula variaría en kilos, algo que no es admisible. Al final tendremos tres bases de datos:
+ coabre_server como slave, coabre como master y reporter_coabre para la gestíon de la pagina web.
+
+Al ser el Reporter el que administra la página web también entra en la parte de Browser,
+ el Browser se trata de servidor web Apache Tomcat. En esta parte la comunicación se 
+realiza mediante peticiones ajax.
+
+En el Browser corre en un tomcat como un contenedor de servlets. Toda la interfaz de 
+interaccion con el cliente esta realizada con java script, jsp, html, jtls y css para darle estilo.
+ El servidor estaría realizado básicamente en java.
+
+\section*{Protocolo de comunicación}
+
+los estados por los que pasa una consulta del cliente son los siguientes. El cliente tiene 
+conocimiento de todos los servlets almadenados por el contenedor tomcat que se tratan 
+de las distintas opciones que puede realizar. A partir de ahi se manda una petición
+ request http que resuelve el web.xml de tomcat devolviendo la ruta del servlet solicitado.
+ Pero antes de devolver la ruta y proceder a resolver la petición tiene que pasar un filtro
+ basado en dos partes: inFIlter y genericFilter. El inFilter recibe el ido de ususario y comprueba
+ que tiene acceso a esa opción de forma que filtra los permisos. El genericFilter establece 
+los parámetros de sesión. Una vez pasa el filtro entramos a resolver la petición del cliente.
+
+El servidor trabaja basándose en el modelo en tres capas de gestión de base de datos: 
+persistencia, negocio y presentación. Presentación que corresponde a la interacción directa
+ con el clientes son los servlets, tras ellos está el lib que corresponde a la capa de lógica
+ de negocio y el dao (minúscula) y Dao (mayúscula) que se encargan de la interaccion de
+ la base de datos, de forma más directa el Dao que genera las consultas SQL.
+
+Siguiendo el diagrama de estados en el que nos habíamos quedado, al acceder al servlet se
+ genera un lib que contiene todas las funciones que puede realizar el cliente. Estas funciones 
+son realizadas por el dao que pide al Dao que realice la conexión con la base de datos. 
+El servlet se encarga de añadir este lib a unas variables de contexto a las que accede el cliente.
+ A parte existen peticiones ajax que genera el cliente.
+
+El lib es el caota los datos de el formulario, el servlets carga los privilegios y las opciones, 
+y el dao es el que contine la lógica de negocio. Jquery
+
+\section*{Objetivo general}
+
+Como inicio convendría saber a grandes rasgos en que entorno nos estamos moviendo.
+ Este proyecto se enmarca en el ámbito de la fabricación de piensos de una empresa.
+ Se trata de un entorno industrial donde necesitamos asegurar una trazabilidad de todos los
+ procesos que se realizan. Como primera aproximación, el proceso de fabricación de piensos
+ sería, la entrada de materias primas y la salida de piensos o materias. Para poder hacer
+ un seguimiento de el proceso productivo, lo dividimos en lotes. Los lotes nos permiten
+ seguir la trazabilidad de las materias primas.
+
+Pongamos un ejemplo: A la empresa le entra 1000Kg de cebada, entonces esa cebada la
+ anotaremos como LE1 (Lote de entrada 1) este lote nos permite hacer el seguimiento 
+desde que sale de el camión hasta que se almacena para posteriormente ser usado.
+ Parte de este lote podría ser usado para mezclarlo con otros lotes y formar un pienso,
+ esto se llama dosificación. Una vez el lote sale de su almacenamiento pasaría a ser 
+LF1 (Lote de fabricación 1) que puede contener otros lotes de entrada. 
+El proceso seguiría de la misma forma con todos los procesos de los que disponga la fábrica.
+
+A partir de aquí, conociendo lo que es un lote, pasamos a describir el objetivo de el proyecto.
+ El objetivo es obtener el consumo energético por cada lote. Esto se dividirá en dos partes:
+ Elaboración de un cliente que procese los datos de los que ya se dispone para presentárselos
+ a el cliente en una página web y el desarrollo de una herramienta de generación de informes.
+
+\section*{Clientel}
+
+Tendrá dos tareas principales, mostrar el consumo energético por lote donde se puede ver u
+n cronograma de los motores que intervienen en un lote y comparar los resultados obtenidos
+ con el consumo real de un contador fiscal con el fin de ajustar el error cometido obteniendo 
+consumo auxiliar y consumo ponderado.
+
+Al poder acceder a la base de datos de el servicio de automatización de la empresa, podremos
+ obtener información relevante a los lotes en tiempo real. También dispone de el consumo 
+energético de cada motor que intervenga en el proceso productivo.
+
+Para realizar esta tarea necesitamos el soporte de una base de datos,
+ que en nuestro caso es MySql, crearemos tres nuevos registros:
+•	reg_logs
+•	reg_consumo_cuartohorario
+•	reg_orden
+Haremos uso de las tablas:
+•	reg_contaodres
+•	str_elementos
+•	tr_lotes
+•	tr_rel_lotes
+
+El cliente al realizar la conexión con el servidor obtiene los objetos nodo que intervienen en la 
+conexión, estos objetos contienen los datos de los motores y de los lotes. La comunicación se 
+realiza por eventos.
+
+\section*{Captura de logsl}
+
+En logs se registrará los cambios de estado de los motores asociados a un lote, junto con 
+una marca de tiempo para registrar en qué momento se produjo el cambio de estado. Los motores
+ pueden estar en tres estados: arranque, paro y alarma. A efectos de el cálculo de el consumo
+ energético, una parada y una alarma significan los mismo: el motor deja de funcionar por lo que 
+dejaría de consumir. Pero sería interesante mostrar un cronograma de los logs incluyendo los 
+momentos en los que se han producido alarmas. El cliente captura eventos generados por el
+servidor SUITER, cada vez que se genera un cambio de estado en los motores, se encolarán
+ usando el modelo de concurrencia productor – consumidor. El consumidor se trata de un proceso
+ en nuestro programa cliente. El factor de degradación es un valor que inicialmente se pondrá
+ a 1, pero que no va a ser usado en este proyecto, tan solo con vistas a futuro. La potencia 
+de degradación y la potencia en vacío será utilizada para el cálculo de el consumo energético. 
+Inicio es la fecha en la que se instaló el motor.
+
+El modelo entidad relación sería:
+
+-	reg_logs(codigo, id_elemento, id_lote, arrancado, alarma, potencia_nominal, potencia_vacio, factor_degrdacion, incio, ts)
+-	reg_logs.arrancado. reg_logs.alarma reg_logs.ts NOT NULL
+-	reg_logs.arrancado {0,1}
+-	reg_logs.alarma {0,1}
+
+
+
+
+
