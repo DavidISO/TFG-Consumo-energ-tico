@@ -149,6 +149,99 @@ El modelo entidad relación sería:
 -	reg_logs.arrancado {0,1}
 -	reg_logs.alarma {0,1}
 
+\section*{Obtención de un consumo cuartohorario}
+
+reg_consumo_cuartohorario
+
+Dicha tabla es necesaria para poder obtener el consumo de cada lote cada 15min, esta 
+decisión se debe a que los contadores registran la energía real consumida cada cuarto horario.
+
+Esta tabla nos permitirá comparar el consumo obtenido con el consumo de los contadores, 
+con el fin de ajustar el coste obtenido ponderando de todos los lotes en un cuarto de hora.
+
+Antes de realizar la comparación con el contador tendremos que rellenar la tabla con
+ los kw de carga y los kw en vacío, de esto se encargará un proceso del Cliente. Pero
+ surge un problema con el consumo en vacío producido ya que las empresas suelen 
+dejar en cedidos los motores antes que pararlos y arrancarlos debido al gran consumo
+ de él arranque, aunque siempre hay un tiempo límite en el que el motor puede estar
+ en vacío. ¿cómo detectamos que está en vacío?, pues cuando id_lote esté a null y 
+arrancado en 1 (true)
+
+¿A quién debemos imputarle el consumo en vacío a el lote que sale o a el que entra?
+ Pongamos un ejemplo donde se pueda ver más claramente:
+
+Imaginemos nos que el molino está moliendo un LF1(Lote de fabricación) pero sale de
+ el molino, el motor del molino sigue arrancado y hasta dentro de 10 min no llega el otro
+ lote LF2. En estos casos hemos tomado la decisión de imputar el consumo en esos 10min
+ a el lote entrante LF2 ya que si no estuviera en cola el motor acabaría parando.
+ También se podría producir las sucesión de estados: estado1   (id_lote= null, arrancado=1) ,
+ estado2  (id_lote= null, arrancado=0), esto indica que el lote ha salido, no va a entrar ningún 
+otro lote y el motor supera su tiempo de arrancado en vacío; ese tiempo se le imputaría
+ a el lote saliente LF1.
+
+Además tiene una última columna que dispone de los kw reales, que contiene el consumo
+ real obtenido gracias a la comparación con los contadores, de lo que hablaré más adelante.
+
+Modelo entidad relación de reg_consumo_cuartohorario
+
+reg_consumo_cuartohorario(codigo, id_lote, kw_carga, kw_vacio, kw_reales, ts)
+reg_consumo_cuartohorario.id_lote NOT NULL
+
+reg_contadores
+
+En reg_contadores obtenemos el consumo por cada contador en una fecha, cada cuarto de hora
+, pero todos los contadores no nos interesan, para discriminar entre contadores necesitamos la
+ tabla str_elemento que contiene el tipo de contador.
+
+De la tabla reg_contadores necesitaremos reg_contadores.id_contador, reg_contadores.fecha,
+ reg_contadores.eae (consumo) y de str_elemento será necesario str_elemento.codigo y 
+str_elemento.nombre.
+
+Modelo:
+
+reg_contadores(id_contador, fecha, eae)
+str_elemento(codigo, nombre)
+
+reg_contadores.id_contador  str_elemento
+
+\section*{Obtención de el consumo por cada orden}
+
+Una vez obtenido el consumo por cada lote en un mismo cuarto horario y el consumo real en un cuarto 
+horario, podemos ponderar. Sumando el consumo de cada lote tenemos el consumo obtenido en un 
+cuarto de hora x que lo comparamos con el consumo real de los contadores que intervienen,
+ obtendremos una desviación que la tendremos que dividir entre los lotes que intervienen en ese 
+cuarto horario ponderando. Todo este cálculo lo realizará un solo proceso.
+
+El resultado de esta operación irá a reg_consumo_cuartohorario.kw_reales
+
+
+Finalmente queremos obtener el consumo total de cada lote junto con el heredado de otro lote, este
+ consumo heredado se debe a las dosificaciones. Pongamos un ejemplo:
+
+Supongamos que tenemos un lote de maíz LE1 que dosifica 5 de sus 10 kg a un LF1 entonces el lote LF1 
+tendrá el consumo en procesar esos 5Kg más el consumo heredado de LE1 que es el consumo de la entrada
+ de ese maíz dividido entre dos.
+
+Por lo tanto, del modelo entidad relación de reg_orden es:
+
+reg_orden(codigo, id_lote, kw_proceso, kw_heredado,ts)
+reg_oreden.id_lote, reg_oreden.ts NOT NULL
+reg_oreden.id_lote UNIQUE
+
+Pero surge una posible excepción, el lote que ha dosificado puede cambiar, lo que hace que el consumo 
+heredado cambie, además ese consumo puede cambiar en los lotes que dosificaron a el lote que ha 
+dosificado, es decir, hacia arriba en la gerarquía. También cambia en los hijos de este Lote.
+
+Generalmente se genera una jerarquía en modo de árbol, dónde la raíz empieza la dosificación. Entonces 
+los pasos a seguir serían los siguientes, cada cierto tiempo se revisa el ts de el lote que ha dosificado,
+ si cambia habrá que cambiar el el consumo por kilo de todos los nodos del árbol que le dosificaron hacia
+ arriba hasta llegar a la raíz, en caso de que el que cambia es la raíz no habrá que recorrer el árbol hacia
+ arriba. Además, hay que cambiar el consumo hacia abajo hasta llegar a las hojas, en el caso de que sea 
+una hoja, solo se cambia ella y finalizaría.
+
+Una vez tengamos todos estos datos, lo más interesante sería ver los lotes más próximos a la venta ya 
+que contienen el consumo final y no van a tener que heredar.
+
 
 
 
