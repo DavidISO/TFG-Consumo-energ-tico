@@ -144,10 +144,12 @@ Inicio es la fecha en la que se instaló el motor.
 
 El modelo entidad relación sería:
 
--	reg_logs(codigo, id_elemento, id_lote, arrancado, alarma, potencia_nominal, potencia_vacio, factor_degrdacion, incio, ts)
+-	reg_logs(codigo, id_elemento, id_lote, marcha, alarma, potencia_nominal, potencia_vacio, factor_degrdacion, factor_correccion, fecha_instalacion,fecha_evento,, ts)
 -	reg_logs.arrancado. reg_logs.alarma reg_logs.ts NOT NULL
 -	reg_logs.arrancado {0,1}
 -	reg_logs.alarma {0,1}
+
+*Hecho
 
 \section*{Obtención de un consumo cuartohorario}
 
@@ -242,6 +244,67 @@ una hoja, solo se cambia ella y finalizaría.
 Una vez tengamos todos estos datos, lo más interesante sería ver los lotes más próximos a la venta ya 
 que contienen el consumo final y no van a tener que heredar.
 
+\section*{Cálculo de cortes}
+
+En un entorno real hay que preveer todos los posibles casos posibles y siempre debemos esperarnos lo peor,
+¿Que sería lo peor? Que se produzca un corte electrico. Lo que hace que nuetra aplicación deje de funcionar.
+
+esto proboca que dejemos de obtener datos de los motores y ya no recivimos logs, pero los motores se pueden
+haber quedado en funcionamiento y seguir consumiendo. La opción elgida para solucionar este requisito es
+que cada vez que arranque el cliente de control energético comprobamos los motores que se han quedado en
+marcha y aun no han sido procesados. Procesados significa que ya hemos calculado su consumo hasta la fecha
+actual. Para realizar esto lo hago en una sola consulta sql:
+
+INSERT INTO reg_logs (id_elemento, fecha_evento, potencia_nominal, potencia_vacio, factor_degradacion, factor_correccion, fecha_instalacion, marcha,corte, todo_ok) 
+        SELECT l.id_elemento,DATE_ADD(l.fecha_evento,INTERVAL 1 SECOND), l.potencia_nominal, l.potencia_vacio, l.factor_degradacion,
+        l.factor_correccion, l.fecha_instalacion, 0, 1, l.todo_ok  
+        FROM reg_logs l INNER JOIN  
+        (SELECT id_elemento, MAX(codigo) AS codigo FROM reg_logs WHERE procesado=FALSE GROUP BY 1) AS a  
+        ON a.id_Elemento = l.`id_elemento` AND l.`codigo` = a.codigo AND l.`marcha` = 1;
+
+
+Esta consulta se podría dividr en tres partes:
+
+1.Selecciono los logs de motores más recientes agrupados por motor, para obtener los últimos motores.
+
+ (SELECT id_elemento, MAX(codigo) AS codigo FROM reg_logs WHERE procesado=FALSE GROUP BY 1) AS a 
+
+2. Ahora queda comprobar si en el último log está en marcha o no, esto lo hago con un inner join:
+
+FROM reg_logs l INNER JOIN 
+       		 (SELECT id_elemento, MAX(codigo) AS codigo FROM reg_logs WHERE procesado=FALSE GROUP BY 1) AS a 
+       		 ON a.id_Elemento = l.`id_elemento` AND l.`codigo` = a.codigo AND l.`marcha` = TRUE
+
+3. Una vez obtenido el último log de los motes que se quedaron en marcha hay que insertarlos en la base de datos 
+con marcha = 0 (parados) y un intervalo de 1 segundo desde que se prudujo el último lo de marcha.
+
+INSERT INTO reg_logs (id_elemento, fecha_evento, potencia_nominal, potencia_vacio, factor_degradacion, factor_correccion, fecha_instalacion, marcha,corte, todo_ok) 
+        SELECT l.id_elemento,DATE_ADD(l.fecha_evento,INTERVAL 1 SECOND), l.potencia_nominal, l.potencia_vacio, l.factor_degradacion,
+        l.factor_correccion, l.fecha_instalacion, 0, 1, l.todo_ok  
+
+
+Pero surge otro problema: no podemos estar seguros de que el log de la última marcha se genere
+justo antes de que se produzca el corte energético además de tampoco podemos estar seguros de que
+cuando se produzca el corte energético inmediatamente se restablezca la energía. Por lo que nuestars lecturas
+serían incongluentes. Pongamos un jemplo: El elevador E1 lleva en marcha 1h, se porduce un corte energético
+y tardan hotra hora en restablecer la conexión ¿Cuándo se produjo exactamente el corte energético?. Planteandolo
+de esta forma resulta sencillo, pero nosotros no podemos saber cuándo se porducen. Entonces eberíamos tener
+un registro periódico que renueve los motores que se han quedado en marcha cada un cierto periodo, cuánto
+más pequeño sea ese periodo mejor será nuestra predicción.
+
+Por lo que creo un hilo que se lanza cada minuto y jecuta la siguiente consulta SQL: 
+
+
+INSERT INTO reg_logs (id_elemento, id_lote, marcha, fecha_evento, potencia_nominal, potencia_vacio, factor_degradacion, factor_correccion, fecha_instalacion, todo_ok)
+SELECT l.id_elemento, l.id_lote, l.marcha, NOW(), l.potencia_nominal, l.potencia_vacio, l.factor_degradacion,
+        l.factor_correccion, l.fecha_instalacion,  l.todo_ok 
+        FROM reg_logs l INNER JOIN 
+       		 (SELECT id_elemento, MAX(codigo) AS codigo FROM reg_logs WHERE procesado=FALSE GROUP BY 1) AS a 
+       		 ON a.id_Elemento = l.`id_elemento` AND l.`codigo` = a.codigo AND l.`marcha` = TRUE
+
+Como podemos ver es muy parecida a la anteriror, en la única parte que cambia es en la insercción,
+ya que, ahor insertamos la marcha anterior que en todos los casos va a ser 1 ya que filtramos por marcha = true,
+ y la fecha actual.
 
 
 
